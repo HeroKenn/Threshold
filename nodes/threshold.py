@@ -3,7 +3,6 @@ import random
 
 DEFAULT_KEYSIZE = 512
 
-
 def feval(alist, x, module):
     ret = 0
     xret = 1
@@ -18,17 +17,6 @@ def factorial(n):
     for i in range(1, n+1):
         ret *= i
     return ret
-
-# party_list 为 Party 组成的列表
-# def lagrange(i, e, party_list, module):
-#     # 插值节点为 1,2,...,n
-#     ret = 1
-#     for j in range(len(party_list)):
-#         if party_list[j].index == i:
-#             continue
-#         ret = (ret*(e-party_list[j].index) *
-#                invert(i-party_list[j].index, module)) % module
-#     return ret
 
 # party_list 为 Party.index 组成的列表
 def lagrange(i, e, party_list, module):
@@ -134,7 +122,8 @@ class Party:
             self.sk = random.randint(1, dealer.modulesquare-1)
         self.pubKey = pow(params.h, self.sk, dealer.modulesquare)
 
-        self.CN = {}
+        self.CNa = 0
+        self.CNb = 0
         self.Lie = {}
         self.c = {}
 
@@ -145,43 +134,25 @@ class Party:
 
         ri = random.randint(1, self.dealer.modulesquare-1)
         si = random.randint(1, self.dealer.modulesquare-1)
-        CNa = pow(self.dealer.g, fi, self.dealer.modulesquare) *\
+        self.CNa = pow(self.dealer.g, fi, self.dealer.modulesquare) *\
             pow(ri, self.dealer.module, self.dealer.modulesquare) *\
             pow(self.pubKey, si, self.dealer.modulesquare) %\
             self.dealer.modulesquare
-        CNb = pow(self.params.h, si, self.dealer.modulesquare)
-
-        return CNa, CNb
-    # party_list 为 Party 组成的列表
-    # def initial_decrypt(self, CNa, CNb, e, party_list):
-    #     # 份额初步解密阶段
-    #     # party_list 是委员会成员集合
-    #     # e 是新成员编号
-    #     CSDi = CNa*invert(
-    #         pow(CNb, self.sk, self.dealer.modulesquare),
-    #         self.dealer.modulesquare) % \
-    #         self.dealer.modulesquare
-
-    #     LAie = lagrange(self.index, e, party_list, self.params.modulem)
-
-    #     Lie = pow(CSDi, LAie, self.dealer.modulesquare)
-
-    #     return Lie
+        self.CNb = pow(self.params.h, si, self.dealer.modulesquare)
+        return True
 
     # party_list 为 Part.index 组成的列表
-    def initial_decrypt(self, CNa, CNb, e, party_list):
+    def initial_decrypt(self, e, party_list):
         # 份额初步解密阶段
         # party_list 是委员会成员集合
         # e 是新成员编号
         # print(self.index)
-        CSDi = CNa*invert(
-            pow(CNb, self.sk, self.dealer.modulesquare),
+        CSDi = self.CNa*invert(
+            pow(self.CNb, self.sk, self.dealer.modulesquare),
             self.dealer.modulesquare) % \
             self.dealer.modulesquare
         
-        # print(self.index,e,party_list,self.params.modulem)
         LAie = lagrange(self.index, e, party_list, self.params.modulem)
-        # print("LAie",LAie)
 
         Lie = pow(CSDi, LAie, self.dealer.modulesquare)
 
@@ -203,13 +174,6 @@ class Party:
 
     def share_extract(self, ci_list, party_list):
         # 新份额提取阶段
-        
-        # 首先向委员会发送份额计算该秘密的解密份额
-        # ci_list = [0]*len(party_list)
-        # for i in range(len(party_list)):
-        #     ci_list[i] = party_list[i].share_decrypt(Le, params)
-
-        # 收到满足个数的 ci 后进行份额提取
         LAi0_list = [0]*len(party_list)
         for i in range(len(party_list)):
             LAi0_list[i] = lagrange(party_list[i], 0,
@@ -223,30 +187,3 @@ class Party:
                         self.dealer.theta, self.dealer.module) % self.dealer.module
 
         return ret
-
-# n = 10
-# t = n-2
-
-# params, pubKey, priKey = genThresholdPaillierKeypair(n, t)
-# party_list = [Party(params, pubKey, i+1) for i in range(t+1)]
-
-# flist = [0]*(t+1)
-# for i in range(t+1):
-#     flist[i] = priKey.eval(party_list[i].index)
-
-# CNa_list = [0]*(t+1)
-# CNb_list = [0]*(t+1)
-# for i in range(t+1):
-#     CNa_list[i], CNb_list[i] = party_list[i].initial_encrypt(flist[i])
-
-# e = n
-# Lie_list = [0]*(t+1)
-# for i in range(t+1):
-#     Lie_list[i] = party_list[i].initial_decrypt(
-#         CNa_list[i], CNb_list[i], e, party_list)
-
-# Le = combine_share(Lie_list, pubKey)
-# fe = share_extract(Le, party_list, params, pubKey)
-
-# print(fe)
-# print(priKey.eval(e)%pubKey.module)

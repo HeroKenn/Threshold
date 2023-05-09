@@ -1,7 +1,7 @@
 import logging
 import time
-from threading import Thread, activeCount
-from nodes.node import Node, broadcast_message, send_message
+from threading import Thread
+from nodes.node import Node
 from nodes.message import Message
 from nodes.threshold import genThresholdPaillierKeypair
 
@@ -25,138 +25,84 @@ committee_addr_list = [
 
 
 def generate_nodes(num):
-    committee_list = []
+    node_list = []
     for i in range(num):
-        committee_list.append(
+        node_list.append(
             Node(committee_addr_list[i], committee_addr_list[:num]))
-    return committee_list
+    return node_list
 
 
 def dic2list(dic):
     l = []
     for key in dic:
-        l.append((key,dic[key]))
+        l.append((key, dic[key]))
     l.sort(key=lambda elem: elem[0])
     l = [i[1] for i in l]
     return l
 
-def start(node_num: int):
-    print("n = {}".format(node_num))
-    if node_num > len(committee_addr_list):
-        logging.error("too much nodes")
-        return
-    if node_num < 5:
-        print(committee_addr_list[:node_num])
-    else:
-        print("committee: [{} ~ {}]".format(
-            committee_addr_list[0], committee_addr_list[node_num - 1]))
+def wait2die(thread_list):
+    flag = 1
+    while flag:
+        flag = 0
+        for i in thread_list:
+            if i.is_alive():
+                flag += 1
 
-    # 创建委员会
-    committee_list = generate_nodes(node_num)
-    for _node in committee_list:
-        Thread(target=_node.start_server, daemon=True).start()
-
-    time.sleep(2)
-
-    for _node in committee_list:
-        while not _node.isRunning:
-            pass
-    print("================ All nodes are online now ==================")
-
-    return committee_list
-
-    # thread_list = []
-    # for node in committee_list:
-    #     thread_list.append(
-    #         Thread(target=broadcast_message, args=(node.peer_addr_list, Message("node", "node", {"a": 123})),
-    #                daemon=True))
-    # for thread in thread_list:
-    #     thread.start()
-
-    # for _node in committee_list:
-    #     _node.stop_server()
-    print("================ All nodes are shutdown now =================")
+def send_call(sender, party_list, func, args):
+    sender_node = node_list[sender-1]
+    thread_list = []
+    for i in party_list:
+        reveive_node = node_list[i-1]
+        thread_list.append(
+            Thread(target=sender_node.send_message,
+                   args=(reveive_node.addr,
+                         Message(sender_node.party.index,
+                                 reveive_node.party.index,
+                                 {"function": func, "args": args})),
+                   daemon=True))
+    for thread in thread_list:
+        thread.start()
+    wait2die(thread_list)
 
 
-if __name__ == '__main__':
-    # committee_list = start(15)
-    # node = committee_list[0]
-    # new_node = committee_list[-1]
-    # new_node.send_message(node.addr,Message("node","node",{"function":"test","args":123}))
-
-    # for _node in committee_list:
-    #     _node.stop_server()
-    n = 10
-    t = n-2
-    e = n
-
+def start(n, t, e, party_list):
     params, pubKey, priKey = genThresholdPaillierKeypair(n, t)
+
+    global node_list
+    node_list = generate_nodes(n)
+    for i in range(len(node_list)):
+        node_list[i].initialize(params, pubKey, i+1)
+    for _node in node_list:
+        Thread(target=_node.start_server, daemon=True).start()
+    dealer_node = Node(committee_addr_list[i], committee_addr_list)
+    node_list[i].initialize(params, pubKey, 0)
+    Thread(target=dealer_node.start_server, daemon=True).start()
+    incoming_node = node_list[e-1]
+    
+
+    # dealer 计算 fi
     flist = [0]*(t+1)
     for i in range(t+1):
         flist[i] = priKey.eval(i+1)
+    for i in party_list:
+        send_call(e, [i], "initial_encrypt", (flist[i-1],))
 
-    committee_list = generate_nodes(n)
-    for i in range(len(committee_list)):
-        committee_list[i].initialize(params, pubKey, i+1)
+    send_call(e,party_list,"initial_decrypt",(e, party_list))
 
-    for _node in committee_list:
-        Thread(target=_node.start_server, daemon=True).start()
+    Lie_list = dic2list(incoming_node.party.Lie)
+    Le = incoming_node.party.combine_share(Lie_list)
 
-    new_node = committee_list[-1]
+    send_call(e,party_list,"share_decrypt",(Le,))
 
-    thread_list = []
-    for i in range(len(committee_list[:n-1])):
-        cur_node = committee_list[i]
-        thread_list.append(
-            Thread(target=new_node.send_message, args=(cur_node.addr, Message(new_node.party.index, cur_node.party.index, {"function": "initial_encrypt", "args": (flist[i],)})), daemon=True))
-    for thread in thread_list:
-        thread.start()
-    flag = 1
-    while flag:
-        flag = 0
-        for i in thread_list:
-            if i.is_alive():
-                flag += 1
-
-    thread_list = []
-    for index in new_node.party.CN:
-        cn_tuple = new_node.party.CN[index]
-        CNa = cn_tuple[0]
-        CNb = cn_tuple[1]
-        cur_node = committee_list[index-1]
-        thread_list.append(
-            Thread(target=new_node.send_message, args=(cur_node.addr, Message(new_node.party.index, cur_node.party.index, {"function": "initial_decrypt", "args": (CNa, CNb, e, list(range(1, n)))})), daemon=True))
-    for thread in thread_list:
-        thread.start()
-    flag = 1
-    while flag:
-        flag = 0
-        for i in thread_list:
-            if i.is_alive():
-                flag += 1
-
-    Lie_list = dic2list(new_node.party.Lie)
-    Le = new_node.party.combine_share(Lie_list)
-
-    thread_list = []
-    for i in range(len(committee_list[:n-1])):
-        cur_node = committee_list[i]
-        thread_list.append(
-            Thread(target=new_node.send_message, args=(cur_node.addr, Message(new_node.party.index, cur_node.party.index, {"function": "share_decrypt", "args": (Le,)})), daemon=True))
-    for thread in thread_list:
-        thread.start()
-    flag = 1
-    while flag:
-        flag = 0
-        for i in thread_list:
-            if i.is_alive():
-                flag += 1
-
-    # print(new_node.party.c)
-    ci_list = dic2list(new_node.party.c)
-    fe = new_node.party.share_extract(ci_list, list(range(1, n)))
+    # print(incoming_node.party.c)
+    ci_list = dic2list(incoming_node.party.c)
+    fe = incoming_node.party.share_extract(ci_list, party_list)
     print(fe)
     print(priKey.eval(e) % pubKey.module)
 
-    for _node in committee_list:
+    for _node in node_list:
         _node.stop_server()
+
+node_list = []
+if __name__ == '__main__':
+    start(10, 8, 10,list(range(1,10)))

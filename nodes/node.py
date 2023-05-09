@@ -113,10 +113,7 @@ class Node:
         function = funcresult["function"]
         ret = funcresult["ret"]
         if(function=="initial_encrypt"):
-            CNa = ret[0]
-            CNb = ret[1]
-            # self.party.CN_list.append((sender_index,CNa,CNb))
-            self.party.CN[sender_index]=CNa,CNb
+            pass
         elif(function=="initial_decrypt"):
             self.party.Lie[sender_index]=ret
         elif(function=="share_decrypt"):
