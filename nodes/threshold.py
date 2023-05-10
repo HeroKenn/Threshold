@@ -1,5 +1,6 @@
 from phe.util import getprimeover, invert, is_prime
 import random
+import time
 
 DEFAULT_KEYSIZE = 512
 
@@ -126,10 +127,13 @@ class Party:
         self.CNb = 0
         self.Lie = {}
         self.c = {}
+        
+        self.time = {}
 
     def initial_encrypt(self, fi):
         # 份额托管阶段，利用自身独立公钥对门限份额进行加密
         # fi 需要是自己对应的份额
+        self.time["initial_encrypt_start"] = time.time()
         self.fi = fi
 
         ri = random.randint(1, self.dealer.modulesquare-1)
@@ -139,6 +143,8 @@ class Party:
             pow(self.pubKey, si, self.dealer.modulesquare) %\
             self.dealer.modulesquare
         self.CNb = pow(self.params.h, si, self.dealer.modulesquare)
+        self.time["initial_encrypt_end"] = time.time()
+        self.time["initial_encrypt"]=self.time["initial_encrypt_end"]-self.time["initial_encrypt_start"]
         return True
 
     # party_list 为 Part.index 组成的列表
@@ -146,7 +152,7 @@ class Party:
         # 份额初步解密阶段
         # party_list 是委员会成员集合
         # e 是新成员编号
-        # print(self.index)
+        self.time["initial_decrypt_start"] = time.time()
         CSDi = self.CNa*invert(
             pow(self.CNb, self.sk, self.dealer.modulesquare),
             self.dealer.modulesquare) % \
@@ -155,25 +161,33 @@ class Party:
         LAie = lagrange(self.index, e, party_list, self.params.modulem)
 
         Lie = pow(CSDi, LAie, self.dealer.modulesquare)
-
+        self.time["initial_decrypt_end"] = time.time()
+        self.time["initial_decrypt"]=self.time["initial_decrypt_end"]-self.time["initial_decrypt_start"]
         return Lie
 
     def share_decrypt(self, Le):
         # 门限Paillier解密阶段
         # Le 为新成员的重构份额
+        self.time["share_decrypt_start"] = time.time()
         ci = pow(Le, 2*self.params.delta*self.fi, self.dealer.modulesquare)
+        self.time["share_decrypt_end"] = time.time()
+        self.time["share_decrypt"]=self.time["share_decrypt_end"]-self.time["share_decrypt_start"]
         return ci
 
     def combine_share(self,Lie_list):
         # 份额重构阶段
         # Lie_list 为收集到的拉格朗日参数集合
+        self.time["combine_share_start"] = time.time()
         Le = 1
         for i in Lie_list:
             Le = Le*i % self.dealer.modulesquare
+        self.time["combine_share_end"] = time.time()
+        self.time["combine_share"]=self.time["combine_share_end"]-self.time["combine_share_start"]
         return Le
 
     def share_extract(self, ci_list, party_list):
         # 新份额提取阶段
+        self.time["share_extract_start"] = time.time()
         LAi0_list = [0]*len(party_list)
         for i in range(len(party_list)):
             LAi0_list[i] = lagrange(party_list[i], 0,
@@ -185,5 +199,6 @@ class Party:
         ret = l_function(ret, self.dealer.module)
         ret = ret*invert(4*self.params.delta*self.params.delta *
                         self.dealer.theta, self.dealer.module) % self.dealer.module
-
+        self.time["share_extract_end"] = time.time()
+        self.time["share_extract"]=self.time["share_extract_end"]-self.time["share_extract_start"]
         return ret
